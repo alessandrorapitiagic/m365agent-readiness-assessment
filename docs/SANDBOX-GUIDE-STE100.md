@@ -70,12 +70,16 @@ The procedure asks these questions in this order. Press Enter to use the default
 
 1. **Tenant.** Type the tenant ID or the domain of the customer.
 2. **Services.** Answer for each service. The default answer is yes.
-   - Purview: the default answer is no. Purview needs a browser login. The container has no browser.
+   - Purview: the default answer is no. Purview normally needs a browser login. The container has no browser.
+   - If you select Purview, the procedure asks for the experimental login (device code). It is an option that we did not test on all tenants.
 3. **Start.** Answer `s` to start the full run.
 4. **Patch.** Answer `s` to apply the corrections to the Microsoft code.
    - The default answer is yes.
    - The container needs the correction for the device code login.
    - See the section "Patch" in the README for details.
+5. **Experimental login.** The procedure asks this question only if you selected Purview.
+   - Answer `s` to try the device code login for Purview.
+   - See the section "Login sperimentale (Purview)" in the README for details.
 
 **Result:** the procedure shows the command and starts the run.
 
@@ -189,5 +193,5 @@ The secret of the app expires after 30 days.
 | `Authentication timed out after 120 seconds` | You did not enter the code in time | Run `ara` again. Open the device page before you press Enter. |
 | `403 Forbidden` for Power Platform | The app is not registered as a management application | Do section 8. Use a Power Platform Administrator account. |
 | The run stops at Agent 365 | No GitHub login | Sign in to GitHub, or do not select Agent 365. |
-| Purview gives no data | The container has no browser | Run Purview on a Windows PC with the Windows script. |
+| Purview gives no data | The container has no browser | Use the experimental login (answer `s` to the Purview question). If it fails, run Purview on a Windows PC with the Windows script. |
 | Many M365 values show `0` | The Microsoft code uses wrong report columns | Run again with the patch. Answer `s` to the patch question. |

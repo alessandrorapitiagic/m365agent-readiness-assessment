@@ -75,6 +75,19 @@ check 'repository pulita dopo il ripristino' bash -c "test -z \"\$(git -C '$inst
 run_bootstrap --dir "$install_dir" --services m365 --patch
 check 'correzioni riapplicate con --patch' grep -q 'get_teams_user_activity_counts_with_period' "$install_dir/Recommendations/m365/TEAMS1.py"
 
+printf '%s\n' '--- 2c. --experimental-login: patch separata da --patch ---'
+output="$(run_bootstrap --dir "$install_dir" --services m365 --experimental-login 2>&1)"
+check 'login sperimentale applicato a collect_purview_data.ps1' grep -q 'Get-DeviceCodeToken' "$install_dir/collect_purview_data.ps1"
+check 'login sperimentale applicato all orchestratore Python' grep -q 'read_stdout' "$install_dir/Core/orchestrator_powershell.py"
+check 'il messaggio descrive il login sperimentale' grep -q 'login sperimentale' <<<"$output"
+check_fails 'senza --patch le correzioni sono tolte' grep -q 'get_teams_user_activity_counts_with_period' "$install_dir/Recommendations/m365/TEAMS1.py"
+run_bootstrap --dir "$install_dir" --services m365 --patch --experimental-login
+check 'entrambe le patch insieme: correzioni' grep -q 'get_teams_user_activity_counts_with_period' "$install_dir/Recommendations/m365/TEAMS1.py"
+check 'entrambe le patch insieme: login' grep -q 'Get-DeviceCodeToken' "$install_dir/collect_purview_data.ps1"
+run_bootstrap --dir "$install_dir" --services m365
+check_fails 'senza flag il login sperimentale e tolto' grep -q 'Get-DeviceCodeToken' "$install_dir/collect_purview_data.ps1"
+check 'repository pulita dopo il ripristino' bash -c "test -z \"\$(git -C '$install_dir' status --porcelain --untracked-files=no)\""
+
 printf '%s\n' '--- 3. --check-only non modifica nulla ---'
 output="$(run_bootstrap --dir "$install_dir" --check-only --services purview 2>&1)"
 check 'check-only segnala pwsh mancante' grep -q 'MANCANTE.*pwsh' <<<"$output"

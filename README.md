@@ -56,6 +56,7 @@ Su Windows serve l'opzione Long Paths attiva: lo script la verifica e indica il 
 | `-TenantId` | Tenant del cliente. Obbligatorio con `-Run` |
 | `-Run` | Dopo l'installazione esegue setup credenziali, controllo del consenso e assessment |
 | `-Patch` | Applica le correzioni al codice Microsoft (vedi [Patch](#patch-opzionale)) |
+| `-ExperimentalLogin` | Prova il login a codice dispositivo per Purview (vedi [Login sperimentale](#login-sperimentale-purview)) |
 | `-CheckOnly` | Mostra cosa manca senza modificare nulla |
 | `-CheckConsent` | Verifica solo il consenso amministrativo dell'app |
 | `-IncludeSetupModule` | Installa `Microsoft.Graph`, usato dal setup delle credenziali |
@@ -74,6 +75,7 @@ curl -fsSL https://raw.githubusercontent.com/alessandrorapitiagic/m365agent-read
 | `--tenant-id` | Tenant del cliente. Obbligatorio con `--run` |
 | `--run` | Dopo l'installazione esegue setup credenziali, controllo del consenso e assessment |
 | `--patch` | Applica le correzioni al codice Microsoft (vedi [Patch](#patch-opzionale)) |
+| `--experimental-login` | Prova il login a codice dispositivo per Purview (vedi [Login sperimentale](#login-sperimentale-purview)) |
 | `--check-only` | Mostra cosa manca senza modificare nulla |
 | `--check-consent` | Verifica solo il consenso amministrativo dell'app |
 | `--include-setup-module` | Installa `Microsoft.Graph`, usato dal setup delle credenziali |
@@ -100,6 +102,18 @@ Regole di funzionamento:
 
 La patch non e' una modifica approvata da Microsoft. Per usare solo il codice originale non usare l'opzione.
 
+## Login sperimentale (Purview)
+
+Il codice Microsoft usa login diversi a seconda del servizio: Graph, Azure e A365 hanno il codice dispositivo, il setup delle credenziali e Purview solo il browser. Il setup e' coperto da `--patch`. Per Purview c'e' una **seconda patch, separata**: `-ExperimentalLogin` (Windows) o `--experimental-login` (Linux). **Sperimentale: non e' verificata su tutti i tenant.**
+
+| Parte | Cosa cambia | Stato |
+| --- | --- | --- |
+| Exchange Online | `Connect-ExchangeOnline -Device` | Opzione documentata da Microsoft; richiede PowerShell 7 |
+| Security & Compliance (DLP, etichette) | `Connect-IPPSSession` non ha `-Device`: la patch ottiene un token con il codice dispositivo e lo passa con `-AccessToken` | Da verificare: richiede ExchangeOnlineManagement 3.8 o successivo e che il tenant accetti il flusso |
+| Messaggio del codice | `Core/orchestrator_powershell.py` leggeva l'output solo a fine esecuzione: la patch mostra subito il codice | Necessario, altrimenti il codice non si vede |
+
+Si applica ai file `collect_purview_data.ps1` e `Core/orchestrator_powershell.py`. Funziona indipendentemente da `--patch` e come quella viene tolta rilanciando senza l'opzione. Se non funziona, rilancia senza l'opzione e Purview torna al login nel browser.
+
 ## Sandbox Docker
 
 La sandbox e' un container Ubuntu pulito con gli strumenti gia' installati e una procedura guidata
@@ -113,7 +127,7 @@ che chiede tenant e servizi. Utile quando non si vuole installare nulla sul PC.
 I report finiscono in `sandbox/reports` sul PC. Le credenziali restano in un volume Docker.
 Guida passo passo: [docs/SANDBOX-GUIDE-STE100.md](docs/SANDBOX-GUIDE-STE100.md).
 
-Limite: Purview usa un login nel browser che non e' disponibile nel container. La procedura guidata lo salta di default.
+Limite: Purview usa di default un login nel browser che non e' disponibile nel container. La procedura guidata lo salta di default; se lo selezioni propone il [login sperimentale](#login-sperimentale-purview).
 
 ## Test
 

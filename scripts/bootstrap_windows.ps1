@@ -27,6 +27,8 @@ param(
     [string]$TenantId,
     # Applica le correzioni al codice Microsoft (vedi il blocco $upstreamFixPatch piu' sotto). Senza -Patch il codice resta originale.
     [switch]$Patch,
+    # Prova il login a codice dispositivo per Purview (Exchange Online e Security & Compliance) con una seconda patch, separata da -Patch. Sperimentale.
+    [switch]$ExperimentalLogin,
     [string]$VenvPath,
     [string]$InstallPath = (Join-Path $env:USERPROFILE "m365-ara"),
     [string]$Branch = "main",
@@ -585,15 +587,96 @@ diff --git a/setup-service-principal.ps1 b/setup-service-principal.ps1
      $context = Get-MgContext
 '@
 
-function Get-UpstreamFixFiles {
-    foreach ($match in [regex]::Matches($upstreamFixPatch, '(?m)^diff --git a/(\S+) ')) { $match.Groups[1].Value }
+# Patch sperimentale (-ExperimentalLogin), separata da -Patch: login a codice dispositivo per Purview.
+# Exchange Online usa -Device; Security & Compliance non ha -Device, quindi usa un token ottenuto con il codice
+# dispositivo e passato con -AccessToken (richiede ExchangeOnlineManagement 3.8 o successivo). Non verificata su tutti i tenant.
+# Il codice dispositivo e' mostrato subito dall'orchestratore Python, che prima leggeva l'output solo a fine esecuzione.
+# E' una patch senza righe di contesto: si applica con git apply --unidiff-zero.
+$experimentalLoginPatch = @'
+diff --git a/Core/orchestrator_powershell.py b/Core/orchestrator_powershell.py
+index f0102b2..b7dbedf 100644
+--- a/Core/orchestrator_powershell.py
++++ b/Core/orchestrator_powershell.py
+@@ -222,0 +223,6 @@ async def collect_purview_data_via_powershell():
++                elif 'devicelogin' in line.lower() or 'enter the code' in line.lower():
++                    stop_spinner()
++                    with _stdout_lock:
++                        sys.stdout.write(f'[{get_timestamp()}]   [device code] {line}\n')
++                        sys.stdout.flush()
++                    start_spinner(current_spinner_message)
+@@ -230,2 +236,19 @@ async def collect_purview_data_via_powershell():
+-    # Wait for process to complete and get stdout (don't use communicate())
+-    stdout = process.stdout.read()
++    # Read stdout while the process runs, so the device code message shows immediately
++    stdout_chunks = []
++    
++    def read_stdout():
++        try:
++            for line in process.stdout:
++                stdout_chunks.append(line)
++                if 'devicelogin' in line.lower() or 'enter the code' in line.lower():
++                    stop_spinner()
++                    with _stdout_lock:
++                        sys.stdout.write(f'[{get_timestamp()}]   [device code] {line.strip()}\n')
++                        sys.stdout.flush()
++                    start_spinner(current_spinner_message)
++        except ValueError:
++            pass
++    
++    stdout_thread = threading.Thread(target=read_stdout, daemon=True)
++    stdout_thread.start()
++    
+@@ -232,0 +256,2 @@ async def collect_purview_data_via_powershell():
++    stdout_thread.join(timeout=5.0)
++    stdout = ''.join(stdout_chunks)
+diff --git a/collect_purview_data.ps1 b/collect_purview_data.ps1
+index a81b7f4..dbe98b7 100644
+--- a/collect_purview_data.ps1
++++ b/collect_purview_data.ps1
+@@ -38,0 +39,21 @@ if (-not $DataOnly) {
++
++# Connect-IPPSSession has no -Device switch: sign in with a device code and pass the token.
++function Get-DeviceCodeToken {
++    param([string]$Scope)
++    $clientId = 'fb78d390-0c51-40cd-8e17-fdbfab77341b'  # client of the ExchangeOnlineManagement module
++    $base = 'https://login.microsoftonline.com/organizations/oauth2/v2.0'
++    $device = Invoke-RestMethod -Method Post -Uri "$base/devicecode" -Body @{ client_id = $clientId; scope = $Scope }
++    [Console]::Error.WriteLine($device.message)
++    $deadline = (Get-Date).AddSeconds([int]$device.expires_in)
++    while ((Get-Date) -lt $deadline) {
++        Start-Sleep -Seconds ([Math]::Max([int]$device.interval, 5))
++        try {
++            return Invoke-RestMethod -Method Post -Uri "$base/token" -Body @{
++                grant_type = 'urn:ietf:params:oauth:grant-type:device_code'; client_id = $clientId; device_code = $device.device_code }
++        } catch {
++            if ("$($_.ErrorDetails.Message)" -notmatch 'authorization_pending|slow_down') { throw }
++        }
++    }
++    throw 'Device code expired before sign-in completed.'
++}
++
+@@ -67 +88,5 @@ try {
+-        Connect-IPPSSession -ErrorAction Stop -WarningAction SilentlyContinue | Out-Null
++        $ippsToken = Get-DeviceCodeToken -Scope 'https://ps.compliance.protection.outlook.com/.default'
++        $ippsPayload = $ippsToken.access_token.Split('.')[1].Replace('-', '+').Replace('_', '/')
++        while ($ippsPayload.Length % 4) { $ippsPayload += '=' }
++        $ippsUpn = ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($ippsPayload)) | ConvertFrom-Json).upn
++        Connect-IPPSSession -AccessToken $ippsToken.access_token -UserPrincipalName $ippsUpn -ShowBanner:$false -ErrorAction Stop -WarningAction SilentlyContinue | Out-Null
+@@ -83 +108 @@ try {
+-            Connect-ExchangeOnline -ShowBanner:$false -ErrorAction Stop -WarningAction SilentlyContinue | Out-Null
++            Connect-ExchangeOnline -ShowBanner:$false -Device -ErrorAction Stop -WarningAction SilentlyContinue | Out-Null
+'@
+
+function Get-PatchFiles {
+    param([string]$PatchText)
+    foreach ($match in [regex]::Matches($PatchText, '(?m)^diff --git a/(\S+) ')) { $match.Groups[1].Value }
 }
 
-# Riporta i file della patch allo stato originale, cosi' il pull non trova modifiche locali.
+# Riporta i file delle patch allo stato originale, cosi' il pull non trova modifiche locali.
 function Reset-UpstreamFixes {
     param([string]$RepoPath)
     $ErrorActionPreference = "Continue"
-    foreach ($file in Get-UpstreamFixFiles) {
+    foreach ($file in @(Get-PatchFiles $upstreamFixPatch) + @(Get-PatchFiles $experimentalLoginPatch)) {
         & git -C $RepoPath checkout -- $file 2>$null
     }
 }
@@ -601,7 +684,7 @@ function Reset-UpstreamFixes {
 function Install-UpstreamFixes {
     param([string]$RepoPath)
     $ErrorActionPreference = "Continue"
-    $files = @(Get-UpstreamFixFiles)
+    $files = @(Get-PatchFiles $upstreamFixPatch)
     $patchFile = Join-Path ([IO.Path]::GetTempPath()) ("ara-fix-{0}.patch" -f [guid]::NewGuid().ToString("N"))
     [IO.File]::WriteAllText($patchFile, (($upstreamFixPatch -replace "`r`n", "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
     try {
@@ -624,6 +707,38 @@ function Install-UpstreamFixes {
             return
         }
         Write-Warning "Il codice Microsoft e' cambiato rispetto a quello atteso: correzioni NON applicate. Il report puo' contenere indicatori a 0 non reali."
+    }
+    finally {
+        Remove-Item $patchFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Install-ExperimentalLogin {
+    param([string]$RepoPath)
+    $ErrorActionPreference = "Continue"
+    $files = @(Get-PatchFiles $experimentalLoginPatch)
+    $patchFile = Join-Path ([IO.Path]::GetTempPath()) ("ara-login-{0}.patch" -f [guid]::NewGuid().ToString("N"))
+    [IO.File]::WriteAllText($patchFile, (($experimentalLoginPatch -replace "`r`n", "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
+    try {
+        & git -C $RepoPath apply --check --unidiff-zero --ignore-whitespace $patchFile 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Applico il login sperimentale a codice dispositivo per Purview (non garantito). Cosa cambia:"
+            Write-Host "  - Exchange Online usa il codice dispositivo (-Device)."
+            Write-Host "  - Security & Compliance non ha -Device: usa un token ottenuto con il codice dispositivo. Da verificare sul tenant."
+            Write-Host "  - il codice dispositivo viene mostrato subito (prima l'output era letto solo a fine esecuzione)."
+            Write-Host "  Si modificano solo questi file: $($files -join ', ')."
+            & git -C $RepoPath apply --unidiff-zero --ignore-whitespace $patchFile
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Applicazione del login sperimentale non riuscita: Purview usera' il login nel browser."
+            }
+            return
+        }
+        & git -C $RepoPath apply --reverse --check --unidiff-zero --ignore-whitespace $patchFile 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Login sperimentale gia' presente."
+            return
+        }
+        Write-Warning "Il codice Microsoft e' cambiato rispetto a quello atteso: login sperimentale NON applicato. Purview usera' il login nel browser."
     }
     finally {
         Remove-Item $patchFile -Force -ErrorAction SilentlyContinue
@@ -655,6 +770,9 @@ if ($Patch) {
 }
 else {
     Write-Host "Codice Microsoft originale, senza correzioni (per applicarle: -Patch). Alcuni indicatori M365 possono risultare 0 anche se il tenant ha attivita'."
+}
+if ($ExperimentalLogin) {
+    Install-ExperimentalLogin -RepoPath $installPath
 }
 $requirementsFile = Join-Path $installPath "requirements.txt"
 if (-not (Test-Path $requirementsFile)) {

@@ -36,7 +36,7 @@ done
 
 keys=(m365 entra defender power-platform copilot-studio purview a365)
 names=('Microsoft 365 (licenze, Teams, SharePoint, Exchange)' 'Entra ID' 'Defender' 'Power Platform' 'Copilot Studio' 'Purview' 'Agent 365')
-notes=('' '' '' 'login con codice dispositivo' 'login con codice dispositivo' 'login nel browser: nel container non e disponibile, di default si salta' 'login con codice dispositivo')
+notes=('' '' '' 'login con codice dispositivo' 'login con codice dispositivo' 'login nel browser: nel container non e disponibile, di default si salta (c e il login sperimentale a codice dispositivo)' 'login con codice dispositivo')
 defaults=(y y y y y n y)
 
 printf '\n%s\n' 'Servizi da controllare (Invio = si, tranne dove indicato):'
@@ -67,6 +67,9 @@ fi
 command=(bash /opt/bootstrap_linux.sh --run --tenant-id "$tenant" --services "$services_csv")
 if ask 'Applico le correzioni al codice Microsoft (--patch)? Nel container servono per il login con codice dispositivo' y; then
     command+=(--patch)
+fi
+if [[ " ${selected[*]} " == *" purview "* ]] && ask 'Purview: provo il login sperimentale a codice dispositivo (--experimental-login)?' y; then
+    command+=(--experimental-login)
 fi
 if [[ "$dry_run" == true ]]; then
     printf '%s\n' 'DRY-RUN: ' "${command[*]}"
