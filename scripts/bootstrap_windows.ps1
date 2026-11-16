@@ -14,6 +14,7 @@
 #   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/alessandrorapitiagic/m365agent-readiness-assessment/main/scripts/bootstrap_windows.ps1))) -Services "Purview","A365"
 #
 # Di default il codice Microsoft resta quello originale. Con -Patch si applicano le correzioni descritte nel README.
+# Con -ExperimentalLogin si prova il login a codice dispositivo per Purview (patch separata, sperimentale).
 [CmdletBinding()]
 param(
     [ValidateSet("M365", "Entra", "Defender", "Power Platform", "Copilot Studio", "Purview", "A365", "All")]

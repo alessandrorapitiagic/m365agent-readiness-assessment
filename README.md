@@ -133,7 +133,7 @@ Limite: Purview usa di default un login nel browser che non e' disponibile nel c
 
 Il test crea un container pulito (senza Git, Python, PowerShell), clona la repository Microsoft (serve la rete)
 ed esegue il bootstrap Linux in tutti gli scenari: installazione, aggiornamento, `--patch` e ripristino,
-`--check-only`, controllo del consenso, validazione dei parametri.
+`--experimental-login` (da solo e insieme a `--patch`), `--check-only`, controllo del consenso, validazione dei parametri.
 
 ```powershell
 .\tests\docker\run-bootstrap-test.ps1                # completo

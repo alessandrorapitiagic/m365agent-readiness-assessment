@@ -5,6 +5,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/alessandrorapitiagic/m365agent-readiness-assessment/main/scripts/bootstrap_linux.sh | bash -s -- --services purview,a365
 #
 # Di default il codice Microsoft resta quello originale. Con --patch si applicano le correzioni descritte nel README.
+# Con --experimental-login si prova il login a codice dispositivo per Purview (patch separata, sperimentale).
 set -Eeuo pipefail
 
 default_repo_url="https://github.com/microsoft/m365-copilot-automated-readiness-assessment.git"
