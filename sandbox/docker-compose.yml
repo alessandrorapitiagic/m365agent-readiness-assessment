@@ -1,0 +1,19 @@
+# Sandbox: un container sempre acceso in cui si entra con "docker exec -it ara-sandbox ara".
+# Le credenziali (.env) restano nel volume ara-home; i report finiscono in sandbox/reports sul tuo PC.
+# Per ripartire da zero: docker compose -f sandbox/docker-compose.yml down -v
+services:
+  ara:
+    image: ara-sandbox
+    container_name: ara-sandbox
+    hostname: ara-sandbox
+    build:
+      context: ..
+      dockerfile: sandbox/Dockerfile
+    stdin_open: true
+    tty: true
+    volumes:
+      - ara-home:/home/ara/m365-ara
+      - ./reports:/home/ara/m365-ara/Reports
+
+volumes:
+  ara-home:
